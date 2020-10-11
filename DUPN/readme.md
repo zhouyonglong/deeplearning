@@ -1,14 +1,12 @@
-﻿# 介绍
+文本要实现的深度学习模型是阿里巴巴的算法工程师18年刚发表的论文《Perceive Your Users in Depth: Learning Universal User Representations from Multiple E-commerce Tasks》中提出的DUPN模型，实现过程和原始论文有一些不同之处，本实现采用了标准的LSTM模型作为网络的一部分，没有使用论文中修改过的Property Gated LSTM,另外，本模型的目标是训练一个分享率预估（类似于点击率预估）模型，并未用到多任务训练模式。
 
-常用的深度学习模型训练、评估和预测相关代码，基于Tensorflow高阶API（Estimator）实现；尽量做到可读性和通用性较好。
+代码基于Tensorflow高阶API Estimator构建, 可以大规模分布式部署。
 
-部分模型子目录下有较详细的文档介绍！
+## 使用说明
 
-关于其中某些模型的介绍，请参考文章[《主流CTR预估模型的演化及对比》](https://zhuanlan.zhihu.com/p/35465875)！《[深度CTR预估模型中的特征自动组合机制演化简史](https://zhuanlan.zhihu.com/p/52876883)》
+使用前需要先构建好tfrecord格式的样本数据。针对特定的任务，可以修改parse tfrecord的方法。
 
-除非特殊说明，本项目的代码都是基于tensorflow 1.6.0开发。
-
-推荐阅读：
+## 推荐阅读
 
 1. [基于Tensorflow高阶API构建大规模分布式深度学习模型系列: 开篇](https://zhuanlan.zhihu.com/p/38470806)
 2. [基于Tensorflow高阶API构建大规模分布式深度学习模型系列：基于Dataset API处理Input pipeline](https://zhuanlan.zhihu.com/p/38421397)

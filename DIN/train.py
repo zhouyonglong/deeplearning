@@ -3,12 +3,12 @@ from __future__ import division
 from __future__ import print_function
 import os
 import json
+import sys
 # for python 2.x
-#import sys
 #reload(sys)
 #sys.setdefaultencoding("utf-8")
-#sys.path.append(os.getcwd())
-from .deep_cross_network import *
+sys.path.append(os.getcwd())
+from .deep_interest_network import *
 from .input_fn import *
 
 flags = tf.app.flags
@@ -17,13 +17,14 @@ flags.DEFINE_string("output_model", "./model_output", "Path to the training data
 flags.DEFINE_string("train_data", "data/samples", "Directory for storing mnist data")
 flags.DEFINE_string("eval_data", "data/eval", "Path to the evaluation data.")
 flags.DEFINE_integer("train_steps", 10000, "Number of (global) training steps to perform")
-flags.DEFINE_integer("batch_size", 512, "Training batch size")
+flags.DEFINE_integer("batch_size", 256, "Training batch size")
 flags.DEFINE_integer("shuffle_buffer_size", 10000, "dataset shuffle buffer size")
-flags.DEFINE_float("learning_rate", 0.01, "Learning rate")
-flags.DEFINE_string("hidden_units", "512,128", "Comma-separated list of number of units in each hidden layer of the NN")
+flags.DEFINE_float("learning_rate", 0.005, "Learning rate")
+flags.DEFINE_string("hidden_units", "512,256,128", "Comma-separated list of number of units in each hidden layer of the NN")
+flags.DEFINE_string("attention_hidden_units", "32,16",
+                    "Comma-separated list of number of units in each hidden layer of the attention layer")
 flags.DEFINE_float("dropout_rate", 0.25, "Drop out rate")
-flags.DEFINE_integer("num_parallel_readers", 5, "number of parallel readers for training data")
-flags.DEFINE_integer("num_cross_layers", 4, "Number of cross layers")
+flags.DEFINE_integer("num_parallel_readers", 10, "number of parallel readers for training data")
 flags.DEFINE_integer("save_checkpoints_steps", 5000, "Save checkpoints every this many steps")
 flags.DEFINE_string("ps_hosts", "s-xiasha-10-2-176-43.hx:2222",
                     "Comma-separated list of hostname:port pairs")
@@ -35,6 +36,7 @@ flags.DEFINE_integer("task_index", None,
                      "the master worker task the performs the variable "
                      "initialization ")
 flags.DEFINE_boolean("run_on_cluster", False, "Whether the cluster info need to be passed in as input")
+flags.DEFINE_boolean("use_batch_norm", True, "Whether to use batch normalization in deep network")
 
 FLAGS = flags.FLAGS
 
@@ -116,14 +118,29 @@ def main(unused_argv):
   print("train steps:", FLAGS.train_steps, "batch_size:", FLAGS.batch_size)
   print("shuffle_buffer_size:", FLAGS.shuffle_buffer_size)
   feature_columns = create_feature_columns()
-  estimator = tf.estimator.Estimator(
-    model_fn=dcn_model_fn,
+  estimator = DIN(
     params={
       'feature_columns': feature_columns,
       'hidden_units': FLAGS.hidden_units.split(','),
       'learning_rate': FLAGS.learning_rate,
-      'num_cross_layers': FLAGS.num_cross_layers
+      'attention_hidden_units': FLAGS.attention_hidden_units.split(','),
+      'vocab_size': {
+        "product": 500000,
+        "cate1": 100,
+        "cate": 10000,
+        "brand": 10000,
+        "seller": 10000
+      },
+      'embedding_size': {
+        "product": 64,
+        "cate1": 10,
+        "cate": 48,
+        "brand": 32,
+        "seller": 32
+      },
+      'dropout_rate': FLAGS.dropout_rate
     },
+    optimizer='Adam',
     config=tf.estimator.RunConfig(model_dir=FLAGS.model_dir, save_checkpoints_steps=FLAGS.save_checkpoints_steps)
   )
   train_spec = tf.estimator.TrainSpec(
@@ -131,7 +148,7 @@ def main(unused_argv):
     max_steps=FLAGS.train_steps
   )
   input_fn_for_eval = lambda: eval_input_fn(eval_files, FLAGS.batch_size)
-  eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_for_eval, throttle_secs=600, steps=None)
+  eval_spec = tf.estimator.EvalSpec(input_fn=input_fn_for_eval, throttle_secs=300, steps=None)
 
   print("before train and evaluate")
   tf.estimator.train_and_evaluate(estimator, train_spec, eval_spec)
@@ -145,6 +162,19 @@ def main(unused_argv):
   if FLAGS.job_name == "worker" and FLAGS.task_index == 0:
     print("exporting model ...")
     feature_spec = tf.feature_column.make_parse_example_spec(feature_columns)
+    other_feature_spec = {
+      "behaviorBids": tf.FixedLenFeature([20], tf.int64),
+      "behaviorCids": tf.FixedLenFeature([20], tf.int64),
+      "behaviorC1ids": tf.FixedLenFeature([10], tf.int64),
+      "behaviorSids": tf.FixedLenFeature([20], tf.int64),
+      "behaviorPids": tf.FixedLenFeature([20], tf.int64),
+      "productId": tf.FixedLenFeature([], tf.int64),
+      "sellerId": tf.FixedLenFeature([], tf.int64),
+      "brandId": tf.FixedLenFeature([], tf.int64),
+      "cate1Id": tf.FixedLenFeature([], tf.int64),
+      "cateId": tf.FixedLenFeature([], tf.int64)
+    }
+    feature_spec.update(other_feature_spec)
     print(feature_spec)
     serving_input_receiver_fn = tf.estimator.export.build_parsing_serving_input_receiver_fn(feature_spec)
     estimator.export_savedmodel(FLAGS.output_model, serving_input_receiver_fn)
